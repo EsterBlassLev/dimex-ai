@@ -6,19 +6,18 @@ from groq import Groq
 from typing import Optional
 import json
 from datetime import datetime
+import time
 
 from dotenv import load_dotenv
 load_dotenv()
 
-import time
 start_time = time.time()
 
 app = FastAPI()
 
-# CORS — מאפשר ל-React לדבר עם FastAPI
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -30,6 +29,19 @@ SYSTEM_PROMPT = """אתה טכנאי מומחה של דיימקס עם 15 שנו
 לשאלות טכניות — ענה עם 🔍 אבחון, 🔧 פתרון, ⚠️ אם לא עוזר.
 לשיחה רגילה — ענה בטבעיות."""
 
+stats = {
+    "total_questions": 0,
+    "total_searches": 0,
+    "total_images": 0,
+    "response_times": [],
+    "questions_log": []
+}
+
+
+@app.get("/")
+def root():
+    return {"status": "Dimex AI Backend פועל!"}
+
 
 @app.post("/chat")
 async def chat(
@@ -37,20 +49,14 @@ async def chat(
         history: str = Form(default="[]"),
         image: Optional[UploadFile] = File(default=None)
 ):
-    # פרסור היסטוריה
     chat_history = json.loads(history)
 
-    # בניית הודעת המשתמש
     if image:
         image_data = base64.b64encode(await image.read()).decode("utf-8")
         ext = image.filename.split(".")[-1].lower()
         media_type = "image/jpeg" if ext == "jpg" else f"image/{ext}"
-
         user_content = [
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:{media_type};base64,{image_data}"}
-            },
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}},
             {"type": "text", "text": message}
         ]
         model = "meta-llama/llama-4-scout-17b-16e-instruct"
@@ -58,20 +64,12 @@ async def chat(
         user_content = message
         model = "llama-3.3-70b-versatile"
 
-    # בניית messages
-    messages = [
-                   {"role": "system", "content": SYSTEM_PROMPT}
-               ] + chat_history + [
-                   {"role": "user", "content": user_content}
-               ]
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}] + chat_history + [{"role": "user", "content": user_content}]
 
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=0.3
-    )
+    start = time.time()
+    response = client.chat.completions.create(model=model, messages=messages, temperature=0.3)
+    elapsed = time.time() - start
 
-    elapsed = time.time() - start_time
     stats["total_questions"] += 1
     stats["response_times"].append(elapsed)
     if image:
@@ -82,27 +80,7 @@ async def chat(
         "latency": round(elapsed, 2)
     })
 
-    # ב-/search endpoint — הוסיפי:
-    stats["total_searches"] += 1
-
     return {"answer": response.choices[0].message.content}
-
-
-@app.get("/")
-def root():
-    return {"status": "Dimex AI Backend פועל!"}
-
-
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_pinecone import PineconeVectorStore
-
-
-# אתחול embeddings ו-Pinecone
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-vectorstore = PineconeVectorStore(
-    index_name="ai-course",
-    embedding=embeddings
-)
 
 
 @app.post("/search")
@@ -115,22 +93,21 @@ async def search_docs(query: str = Form(...)):
     })
 
     from pinecone import Pinecone
+    from langchain_huggingface import HuggingFaceEmbeddings
     from langchain_pinecone import PineconeVectorStore
-    from langchain_openai import OpenAIEmbeddings
 
-    # נשתמש ב-Groq לembeddings דרך API במקום מודל מקומי
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-
-    # חיפוש ישיר ב-Pinecone בלי embeddings מקומיים
-    index = pc.Index("ai-course")
-
-    # המרת השאלה לembedding דרך Pinecone inference
-    results = index.search(
-        namespace="",
-        query={"inputs": {"text": query}, "top_k": 3}
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2",
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True}
+    )
+    vectorstore = PineconeVectorStore(
+        index_name="ai-course",
+        embedding=embeddings
     )
 
-    context = "\n\n".join([r["fields"].get("text", "") for r in results.get("result", {}).get("hits", [])])
+    docs = vectorstore.similarity_search(query, k=3)
+    context = "\n\n".join(doc.page_content for doc in docs)
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
@@ -141,26 +118,12 @@ async def search_docs(query: str = Form(...)):
         temperature=0.1
     )
 
-    return {
-        "answer": response.choices[0].message.content,
-        "sources": []
-    }
+    return {"answer": response.choices[0].message.content, "sources": [doc.page_content[:100] for doc in docs]}
 
-stats = {
-    "total_questions": 0,
-    "total_searches": 0,
-    "total_images": 0,
-    "response_times": [],
-    "questions_log": []
-}
 
-# endpoint חדש:
 @app.get("/stats")
 def get_stats():
-    avg_latency = (
-        sum(stats["response_times"]) / len(stats["response_times"])
-        if stats["response_times"] else 0
-    )
+    avg_latency = sum(stats["response_times"]) / len(stats["response_times"]) if stats["response_times"] else 0
     return {
         "total_questions": stats["total_questions"],
         "total_searches": stats["total_searches"],
