@@ -95,21 +95,40 @@ async def search_docs(query: str = Form(...)):
     from pinecone import Pinecone
 
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index = pc.Index("ai-course")
 
-    # נשתמש בGroq ליצירת embedding
-    embed_response = client.chat.completions.create(
+    # Pinecone Inference — embedding בענן בלי מודל מקומי
+    embeddings = pc.inference.embed(
+        model="multilingual-e5-large",
+        inputs=[query],
+        parameters={"input_type": "query"}
+    )
+
+    index = pc.Index("ai-course")
+    results = index.query(
+        vector=embeddings[0].values,
+        top_k=3,
+        include_metadata=True
+    )
+
+    context = "\n\n".join([
+        r["metadata"].get("text", "")
+        for r in results["matches"]
+    ])
+
+    response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[{
-            "role": "user",
-            "content": f"חפש במדריכים טכניים: {query}\nענה בעברית בצורה מפורטת."
-        }],
+        messages=[
+            {"role": "system", "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית על בסיס המידע שניתן בלבד."},
+            {"role": "user", "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"}
+        ],
         temperature=0.1
     )
 
+    sources = [r["metadata"].get("source", "") for r in results["matches"]]
+
     return {
-        "answer": embed_response.choices[0].message.content,
-        "sources": []
+        "answer": response.choices[0].message.content,
+        "sources": [r["metadata"].get("text", "")[:100] for r in results["matches"]]
     }
 
 @app.get("/stats")
