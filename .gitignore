@@ -1,8 +1,8 @@
-"backend/documents/" 
-".venv/" 
-"__pycache__/" 
-"*.pyc" 
-"backend/.env" 
-".env" 
-"backend/.env" 
-".env" 
+backend/documents/
+.venv/
+__pycache__/
+*.pyc
+backend/.env
+.env
+backend/.env
+.env
