@@ -98,9 +98,9 @@ async def search_docs(query: str = Form(...)):
 
     # Pinecone Inference — embedding בענן בלי מודל מקומי
     embeddings = pc.inference.embed(
-        model="multilingual-e5-small",
+        model="llama-text-embed-v2",
         inputs=[query],
-        parameters={"input_type": "query"}
+        parameters={"input_type": "query", "truncate": "END"}
     )
 
     index = pc.Index("ai-course")
