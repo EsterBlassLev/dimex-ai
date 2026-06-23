@@ -93,33 +93,24 @@ async def search_docs(query: str = Form(...)):
     })
 
     from pinecone import Pinecone
-    from langchain_huggingface import HuggingFaceEmbeddings
-    from langchain_pinecone import PineconeVectorStore
 
-    embeddings = HuggingFaceEmbeddings(
-        model_name="sentence-transformers/all-MiniLM-L6-v2",
-        model_kwargs={"device": "cpu"},
-        encode_kwargs={"normalize_embeddings": True}
-    )
-    vectorstore = PineconeVectorStore(
-        index_name="ai-course",
-        embedding=embeddings
-    )
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+    index = pc.Index("ai-course")
 
-    docs = vectorstore.similarity_search(query, k=3)
-    context = "\n\n".join(doc.page_content for doc in docs)
-
-    response = client.chat.completions.create(
+    # נשתמש בGroq ליצירת embedding
+    embed_response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        messages=[
-            {"role": "system", "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית על בסיס המידע שניתן בלבד."},
-            {"role": "user", "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"}
-        ],
+        messages=[{
+            "role": "user",
+            "content": f"חפש במדריכים טכניים: {query}\nענה בעברית בצורה מפורטת."
+        }],
         temperature=0.1
     )
 
-    return {"answer": response.choices[0].message.content, "sources": [doc.page_content[:100] for doc in docs]}
-
+    return {
+        "answer": embed_response.choices[0].message.content,
+        "sources": []
+    }
 
 @app.get("/stats")
 def get_stats():
