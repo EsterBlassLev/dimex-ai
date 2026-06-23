@@ -92,43 +92,22 @@ async def search_docs(query: str = Form(...)):
         "latency": 0
     })
 
-    from pinecone import Pinecone
-
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-
-    # Pinecone Inference — embedding בענן בלי מודל מקומי
-    embeddings = pc.inference.embed(
-        model="llama-text-embed-v2",
-        inputs=[query],
-        parameters={"input_type": "query", "truncate": "END"}
-    )
-
-    index = pc.Index("ai-course")
-    results = index.query(
-        vector=embeddings[0].values,
-        top_k=3,
-        include_metadata=True
-    )
-
-    context = "\n\n".join([
-        r["metadata"].get("text", "")
-        for r in results["matches"]
-    ])
-
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {"role": "system", "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית על בסיס המידע שניתן בלבד."},
-            {"role": "user", "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"}
+            {
+                "role": "system",
+                "content": """אתה טכנאי מומחה של דיימקס עם 15 שנות ניסיון במוצרי Zebra, Honeywell ו-Unitech.
+    ענה בעברית בצורה מפורטת ומקצועית על שאלות טכניות."""
+            },
+            {"role": "user", "content": query}
         ],
         temperature=0.1
     )
 
-    sources = [r["metadata"].get("source", "") for r in results["matches"]]
-
     return {
         "answer": response.choices[0].message.content,
-        "sources": [r["metadata"].get("text", "")[:100] for r in results["matches"]]
+        "sources": []
     }
 
 @app.get("/stats")
