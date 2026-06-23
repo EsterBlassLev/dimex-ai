@@ -107,34 +107,44 @@ vectorstore = PineconeVectorStore(
 
 @app.post("/search")
 async def search_docs(query: str = Form(...)):
-    """חיפוש במדריכים טכניים"""
+    stats["total_searches"] += 1
+    stats["questions_log"].append({
+        "question": f"📚 {query[:50]}",
+        "time": datetime.now().strftime("%H:%M"),
+        "latency": 0
+    })
 
-    # חיפוש ב-Pinecone
-    docs = vectorstore.similarity_search(query, k=3)
+    from pinecone import Pinecone
+    from langchain_pinecone import PineconeVectorStore
+    from langchain_openai import OpenAIEmbeddings
 
-    # שליחה ל-LLM לסיכום
-    context = "\n\n".join(doc.page_content for doc in docs)
+    # נשתמש ב-Groq לembeddings דרך API במקום מודל מקומי
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+
+    # חיפוש ישיר ב-Pinecone בלי embeddings מקומיים
+    index = pc.Index("ai-course")
+
+    # המרת השאלה לembedding דרך Pinecone inference
+    results = index.search(
+        namespace="",
+        query={"inputs": {"text": query}, "top_k": 3}
+    )
+
+    context = "\n\n".join([r["fields"].get("text", "") for r in results.get("result", {}).get("hits", [])])
 
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
-            {
-                "role": "system",
-                "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית על בסיס המידע שניתן בלבד."
-            },
-            {
-                "role": "user",
-                "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"
-            }
+            {"role": "system", "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית על בסיס המידע שניתן בלבד."},
+            {"role": "user", "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"}
         ],
         temperature=0.1
     )
 
     return {
         "answer": response.choices[0].message.content,
-        "sources": [doc.page_content[:100] for doc in docs]
+        "sources": []
     }
-
 
 stats = {
     "total_questions": 0,

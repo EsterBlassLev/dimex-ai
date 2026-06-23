@@ -1,5 +1,5 @@
 import { useState } from "react"
-import Chat from "./pages/Chat"
+import Chat from "./pages/Chat.jsx"
 import DocSearch from "./pages/DocSearch"
 import Dashboard from "./pages/Dashboard"
 import BottomNav from "./components/BottomNav"
