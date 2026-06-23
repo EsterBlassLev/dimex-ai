@@ -183,7 +183,7 @@ export default function App() {
     <img
       src="/logo.png"
       alt="Boss Dimex"
-      style={{ height: "40px", filter: "brightness(0) invert(1)" }}
+      style={{ height: "40px" }}
     />
   </div>
         {/* עמוד נוכחי */}
