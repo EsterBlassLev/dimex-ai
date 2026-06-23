@@ -173,6 +173,19 @@ export default function App() {
       `}</style>
 
       <div className="app">
+          <div style={{
+    background: "#1a73e8",
+    padding: "10px 20px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center"
+  }}>
+    <img
+      src="/logo.png"
+      alt="Boss Dimex"
+      style={{ height: "40px", filter: "brightness(0) invert(1)" }}
+    />
+  </div>
         {/* עמוד נוכחי */}
         <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
           {activePage === "chat"      && <Chat />}
