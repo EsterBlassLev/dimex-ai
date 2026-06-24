@@ -131,10 +131,12 @@ async def search_docs(query: str = Form(...)):
         temperature=0.1
     )
 
-    return {
-        "answer": response.choices[0].message.content,
-        "sources": [r["metadata"].get("text", "")[:100] for r in results["matches"]]
-    }
+    sources = [
+        f"{r['metadata'].get('product', '')} — {r['metadata'].get('text', '')[:80]}"
+        for r in results["matches"]
+    ]
+    return {"answer": response.choices[0].message.content, "sources": sources}
+
 @app.get("/stats")
 def get_stats():
     avg_latency = sum(stats["response_times"]) / len(stats["response_times"]) if stats["response_times"] else 0

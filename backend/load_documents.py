@@ -1,17 +1,22 @@
-from langchain_huggingface import HuggingFaceEmbeddings
-from pinecone import Pinecone
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from dotenv import load_dotenv
 import os
+import re
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pinecone import Pinecone
+from dotenv import load_dotenv
 
 load_dotenv()
 
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
+def get_product_name(text, full_content, chunk_start):
+    """מוצא את שם המוצר הקרוב ביותר לchunk"""
+    content_before = full_content[:chunk_start]
+    headers = re.findall(r'^## (.+)$', content_before, re.MULTILINE)
+    if headers:
+        return headers[-1].strip()
+    return "General"
 
 def load_all_documents():
-    # קריאת קובץ markdown
     md_path = "documents/devices_knowledge_base.md"
 
     with open(md_path, "r", encoding="utf-8") as f:
@@ -19,7 +24,6 @@ def load_all_documents():
 
     print(f"📄 נטען קובץ: {len(content)} תווים")
 
-    # חלוקה לchunks
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=500,
         chunk_overlap=50,
@@ -31,6 +35,16 @@ def load_all_documents():
     )
 
     print(f"✂️ נוצרו {len(chunks)} chunks")
+
+    # חישוב מיקום כל chunk בטקסט המקורי
+    pos = 0
+    for chunk in chunks:
+        idx = content.find(chunk.page_content[:50], pos)
+        if idx >= 0:
+            chunk.metadata["product"] = get_product_name(chunk.page_content, content, idx)
+            pos = idx
+        else:
+            chunk.metadata["product"] = "General"
 
     index = pc.Index("dimex-docs")
 
@@ -52,7 +66,8 @@ def load_all_documents():
                 "values": emb.values,
                 "metadata": {
                     "text": chunk.page_content,
-                    "source": "devices_knowledge_base.md"
+                    "source": "devices_knowledge_base.md",
+                    "product": chunk.metadata.get("product", "General")
                 }
             })
 
@@ -60,7 +75,6 @@ def load_all_documents():
         print(f"  ✅ {min(i + batch_size, len(chunks))}/{len(chunks)}")
 
     print("🎉 הושלם!")
-
 
 if __name__ == "__main__":
     load_all_documents()
