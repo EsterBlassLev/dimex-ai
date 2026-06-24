@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react"
 import axios from "axios"
+import ReactMarkdown from 'react-markdown'
 
 import API_URL from "../config"
 
@@ -80,7 +81,7 @@ export default function chat() {
                 {msg.image && (
                   <img src={msg.image} alt="תמונה" />
                 )}
-                {msg.content}
+                <ReactMarkdown>{msg.content}</ReactMarkdown>
               </div>
             </div>
           ))}

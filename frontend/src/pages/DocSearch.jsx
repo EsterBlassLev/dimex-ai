@@ -3,6 +3,9 @@ import axios from "axios"
 
 import API_URL from "../config"
 
+import ReactMarkdown from 'react-markdown'
+
+
 
 export default function DocSearch() {
   const [query, setQuery] = useState("")
@@ -117,7 +120,7 @@ export default function DocSearch() {
               lineHeight: "1.6",
               whiteSpace: "pre-wrap"
             }}>
-              {result.answer}
+              <ReactMarkdown>{result.answer}</ReactMarkdown>
             </div>
 
             {/* מקורות */}
