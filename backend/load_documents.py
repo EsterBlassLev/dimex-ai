@@ -1,66 +1,65 @@
-import os
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_pinecone import PineconeVectorStore
-import glob
-
+from pinecone import Pinecone
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from dotenv import load_dotenv
+import os
+
 load_dotenv()
 
 embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
 
 
 def load_all_documents():
-    """טוענת את כל ה-PDFים מתיקיית documents"""
+    # קריאת קובץ markdown
+    md_path = "documents/devices_knowledge_base.md"
 
-    # מוצאת את כל הPDFים
-    pdf_files = glob.glob("documents/**/*.pdf", recursive=True)
+    with open(md_path, "r", encoding="utf-8") as f:
+        content = f.read()
 
-    if not pdf_files:
-        print("❌ לא נמצאו קבצי PDF בתיקיית documents/")
-        return
+    print(f"📄 נטען קובץ: {len(content)} תווים")
 
-    print(f"📄 נמצאו {len(pdf_files)} קבצים")
+    # חלוקה לchunks
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=500,
+        chunk_overlap=50,
+        separators=["##", "#", "\n\n", "\n", " "]
+    )
+    chunks = splitter.create_documents(
+        [content],
+        metadatas=[{"source": "devices_knowledge_base.md"}]
+    )
 
-    all_chunks = []
+    print(f"✂️ נוצרו {len(chunks)} chunks")
 
-    for pdf_path in pdf_files:
-        try:
-            print(f"  טוענת: {pdf_path}")
-            loader = PyPDFLoader(pdf_path)
-            documents = loader.load()
+    index = pc.Index("dimex-docs")
 
-            splitter = RecursiveCharacterTextSplitter(
-                chunk_size=500,
-                chunk_overlap=50
-            )
-            chunks = splitter.split_documents(documents)
+    batch_size = 50
+    for i in range(0, len(chunks), batch_size):
+        batch = chunks[i:i + batch_size]
+        texts = [c.page_content for c in batch]
 
-            # מוסיפה מטאדטה לכל chunk
-            for chunk in chunks:
-                chunk.metadata["source"] = os.path.basename(pdf_path)
-
-            all_chunks.extend(chunks)
-            print(f"  ✅ {len(chunks)} חלקים")
-
-        except Exception as e:
-            print(f"  ❌ שגיאה: {e}")
-
-    print(f"\n📤 מעלה {len(all_chunks)} חלקים ל-Pinecone...")
-
-    # העלאה ל-Pinecone בקבוצות
-    batch_size = 100
-    for i in range(0, len(all_chunks), batch_size):
-        batch = all_chunks[i:i + batch_size]
-        PineconeVectorStore.from_documents(
-            batch,
-            embeddings,
-            index_name="ai-course"
+        embeddings = pc.inference.embed(
+            model="llama-text-embed-v2",
+            inputs=texts,
+            parameters={"input_type": "passage", "truncate": "END"}
         )
-        print(f"  ✅ {min(i + batch_size, len(all_chunks))}/{len(all_chunks)}")
 
-    print("\n🎉 כל המסמכים נטענו בהצלחה!")
+        vectors = []
+        for j, (chunk, emb) in enumerate(zip(batch, embeddings)):
+            vectors.append({
+                "id": f"doc_{i + j}",
+                "values": emb.values,
+                "metadata": {
+                    "text": chunk.page_content,
+                    "source": "devices_knowledge_base.md"
+                }
+            })
+
+        index.upsert(vectors=vectors)
+        print(f"  ✅ {min(i + batch_size, len(chunks))}/{len(chunks)}")
+
+    print("🎉 הושלם!")
 
 
 if __name__ == "__main__":

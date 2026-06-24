@@ -82,7 +82,6 @@ async def chat(
 
     return {"answer": response.choices[0].message.content}
 
-
 @app.post("/search")
 async def search_docs(query: str = Form(...)):
     stats["total_searches"] += 1
@@ -92,24 +91,50 @@ async def search_docs(query: str = Form(...)):
         "latency": 0
     })
 
+    from pinecone import Pinecone
+    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+
+    # embedding לשאלה
+    query_embedding = pc.inference.embed(
+        model="llama-text-embed-v2",
+        inputs=[query],
+        parameters={"input_type": "query", "truncate": "END"}
+    )
+
+    # חיפוש ב-Pinecone
+    index = pc.Index("dimex-docs")
+    results = index.query(
+        vector=query_embedding[0].values,
+        top_k=3,
+        include_metadata=True
+    )
+
+    context = "\n\n".join([
+        r["metadata"].get("text", "")
+        for r in results["matches"]
+    ])
+
+    print(f"🔍 Context מ-Pinecone: {context[:300]}")
+
     response = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[
             {
                 "role": "system",
-                "content": """אתה טכנאי מומחה של דיימקס עם 15 שנות ניסיון במוצרי Zebra, Honeywell ו-Unitech.
-    ענה בעברית בצורה מפורטת ומקצועית על שאלות טכניות."""
+                "content": "אתה טכנאי מומחה של דיימקס. ענה בעברית אך ורק על בסיס המידע שניתן. אם המידע לא מספיק — אמור זאת."
             },
-            {"role": "user", "content": query}
+            {
+                "role": "user",
+                "content": f"מידע מהמדריכים:\n{context}\n\nשאלה: {query}"
+            }
         ],
         temperature=0.1
     )
 
     return {
         "answer": response.choices[0].message.content,
-        "sources": []
+        "sources": [r["metadata"].get("text", "")[:100] for r in results["matches"]]
     }
-
 @app.get("/stats")
 def get_stats():
     avg_latency = sum(stats["response_times"]) / len(stats["response_times"]) if stats["response_times"] else 0
