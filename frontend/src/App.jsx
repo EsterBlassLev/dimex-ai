@@ -118,7 +118,6 @@ export default function App() {
     <>
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #f0f2f5; }
         .app {
           max-width: 800px;
           margin: 0 auto;
@@ -128,14 +127,13 @@ export default function App() {
           background: white;
           box-shadow: 0 0 20px rgba(0,0,0,0.1);
         }
-        @media (max-width: 600px) {
+        @media (max-width: 750px) {
           .app { box-shadow: none; }
         }
       `}</style>
 
       <div className="app">
         <div style={{
-          background: "#1a73e8",
           padding: "10px 20px",
           display: "flex",
           alignItems: "center",
